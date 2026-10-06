@@ -470,8 +470,10 @@ if [ "$CESL_SHOW_GIT" = "1" ] && git -C "$cwd" rev-parse --is-inside-work-tree >
     [ "$ahead" -gt 0 ] 2>/dev/null && git_remote_status+="${g_ahead}${ahead}"
     [ "$behind" -gt 0 ] 2>/dev/null && git_remote_status+="${g_behind}${behind}"
 
-    local_git_dir=$(git -C "$cwd" rev-parse --git-dir 2>/dev/null)
-    common_dir=$(git -C "$cwd" rev-parse --git-common-dir 2>/dev/null)
+    # Both paths can come back relative to $cwd (e.g. "../.git" in a
+    # subdirectory) while the other is absolute, so resolve before comparing
+    local_git_dir=$(cd "$cwd" 2>/dev/null && cd "$(git rev-parse --git-dir 2>/dev/null)" 2>/dev/null && pwd -P)
+    common_dir=$(cd "$cwd" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)
     if [ -n "$local_git_dir" ] && [ -n "$common_dir" ] && [ "$local_git_dir" != "$common_dir" ]; then
         is_worktree=true
     fi
