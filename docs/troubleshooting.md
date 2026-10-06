@@ -33,7 +33,7 @@ If none resolves, the rows are skipped deliberately — this is not an error sta
 
 Extra-usage credits only render when extra usage is actually enabled on your account.
 
-Also check `CESL_SHOW_SCOPED` and `CESL_SHOW_EXTRA`. With both set to `0` the API is never called at all, and `explain` says so on its `fetch needed:` line.
+Also check `CESL_SHOW_SCOPED` and `CESL_SHOW_EXTRA`. With both set to `0` the API is only called to backfill missing 5-hour / 7-day numbers, and `explain` shows why on its `fetch needed:` line. Its `limits:` line says whether each of those two values came from `stdin` or the `usage api`.
 
 ## The pace projection never appears
 

@@ -112,7 +112,7 @@ Set any of these to `0` to hide that segment. All default to `1`.
 CESL_SHOW_EXTRA=0
 ```
 
-`CESL_SHOW_SCOPED` and `CESL_SHOW_EXTRA` are the only two rows that need the usage API. Setting **both** to `0` skips OAuth token resolution and the HTTP request entirely on every render, which is the cheapest the status line gets while keeping the 5-hour and 7-day bars:
+`CESL_SHOW_SCOPED` and `CESL_SHOW_EXTRA` are the only two rows that always need the usage API. Setting **both** to `0` skips OAuth token resolution and the HTTP request on every render where the stdin payload carries the 5-hour and 7-day numbers, which is the cheapest the status line gets while keeping those bars. When the payload has none (for example before the first reply of a session), the API is still called to fill them in; use `CESL_SHOW_RATE_BLOCK=0` if it must never be called:
 
 ```bash
 CESL_SHOW_SCOPED=0
