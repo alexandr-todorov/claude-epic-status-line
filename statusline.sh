@@ -51,6 +51,8 @@ _cesl_cfg="${CESL_CONFIG:-$HOME/.config/claude-epic-status-line/config.sh}"
 : "${CESL_COST_CRIT:=20}"
 # Bars
 : "${CESL_BAR_WIDTH:=10}"
+# Rate-limit layout: rows (one row per limit) | inline (all on one line)
+: "${CESL_RATE_LAYOUT:=rows}"
 # Usage API cache TTL (seconds)
 : "${CESL_CACHE_TTL:=60}"
 # Currency
@@ -645,11 +647,13 @@ cache_dir="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/claude-statusline-$(id -u)"
 cache_file="$cache_dir/usage-cache.json"
 usage_data=""
 
-# The API only feeds the scoped-weekly and extra-usage rows. With both hidden
-# there is nothing to enrich, so skip token resolution and the request entirely.
+# The API feeds the scoped-weekly and extra-usage rows, and backfills the
+# 5-hour / 7-day rows when stdin carries none (e.g. before the first reply of a
+# session). With nothing to enrich, skip token resolution and the request.
 usage_needed=0
 if [ "$CESL_SHOW_RATE_BLOCK" = "1" ] \
-   && { [ "$CESL_SHOW_SCOPED" = "1" ] || [ "$CESL_SHOW_EXTRA" = "1" ]; }; then
+   && { [ "$CESL_SHOW_SCOPED" = "1" ] || [ "$CESL_SHOW_EXTRA" = "1" ] \
+        || [ "$sl_five_pct" = "-" ] || [ "$sl_seven_pct" = "-" ]; }; then
     usage_needed=1
 fi
 
@@ -758,8 +762,13 @@ rate_row() { # label pct reset_style reset_val [value_text]
     local rgb bar pfmt line rst
     rgb=$(state_rgb "$pct")
     bar=$(build_bar "$pct" "$CESL_BAR_WIDTH" "$rgb")
-    line=$(printf '%-7.7s' "$label")
-    line="${c_txt}${line}${reset} ${bar}"
+    if [ "$CESL_RATE_LAYOUT" = "inline" ]; then
+        case "$label" in 5-hour) label="5h" ;; 7-day) label="7d" ;; esac
+        line="${c_txt}${label}${reset} ${bar}"
+    else
+        line=$(printf '%-7.7s' "$label")
+        line="${c_txt}${line}${reset} ${bar}"
+    fi
     if [ -n "$vtext" ]; then
         line+=" ${vtext}"
     else
@@ -768,12 +777,30 @@ rate_row() { # label pct reset_style reset_val [value_text]
     fi
     rst=$(fmt_reset_any "$style" "$rval")
     [ -n "$rst" ] && line+=" ${dim}${g_reset}${reset} ${c_txt}${rst}${reset}"
-    [ -n "$rate_lines" ] && rate_lines+="\n"
+    if [ -n "$rate_lines" ]; then
+        [ "$CESL_RATE_LAYOUT" = "inline" ] && rate_lines+="$sep" || rate_lines+="\n"
+    fi
     rate_lines+="$line"
 }
 
+# 5-hour / 7-day: stdin is authoritative, the usage API is the fallback
+if [ -n "$usage_data" ] && { [ "$sl_five_pct" = "-" ] || [ "$sl_seven_pct" = "-" ]; }; then
+    read_api=$(printf '%s' "$usage_data" | jq -r '[
+        (((.five_hour.utilization)? // "") | tostring),
+        (((.five_hour.resets_at)? // "") | tostring),
+        (((.seven_day.utilization)? // "") | tostring),
+        (((.seven_day.resets_at)? // "") | tostring)
+    ] | map(if . == "" or . == "null" then "-" else . end) | @tsv' 2>/dev/null)
+    IFS=$'\t' read -r api_five_pct api_five_reset api_seven_pct api_seven_reset <<< "$read_api"
+    if [ "$sl_five_pct" = "-" ] && [ -n "$api_five_pct" ] && [ "$api_five_pct" != "-" ]; then
+        sl_five_pct=$api_five_pct; sl_five_reset=$api_five_reset
+    fi
+    if [ "$sl_seven_pct" = "-" ] && [ -n "$api_seven_pct" ] && [ "$api_seven_pct" != "-" ]; then
+        sl_seven_pct=$api_seven_pct; sl_seven_reset=$api_seven_reset
+    fi
+fi
+
 if [ "$CESL_SHOW_RATE_BLOCK" = "1" ]; then
-    # 5-hour / 7-day: stdin is authoritative
     if [ "$sl_five_pct" != "-" ]; then
         five_pct=$(clamp_pct "$sl_five_pct")
         rate_row "5-hour" "$five_pct" time "$sl_five_reset"
@@ -895,7 +922,9 @@ fi
 
 # ── Output ──────────────────────────────────────────────────────────
 out="$line1"
-[ -n "$rate_lines" ] && out+="\n\n${rate_lines}"
+if [ -n "$rate_lines" ]; then
+    [ "$CESL_RATE_LAYOUT" = "inline" ] && out+="\n${rate_lines}" || out+="\n\n${rate_lines}"
+fi
 [ -n "$hint_line" ] && out+="\n\n${hint_line}"
 
 if [ "$cesl_color" = "1" ]; then
